@@ -58,21 +58,28 @@ def sender_email(from_header: str) -> str:
 
 
 def poll():
+    log.info("--- Cycle polling ---")
     with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
         imap.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
         imap.select("INBOX")
         _, ids = imap.search(None, "UNSEEN")
 
-        for mid in ids[0].split():
+        email_ids = ids[0].split()
+        log.info("%d email(s) non lu(s) trouvé(s)", len(email_ids))
+
+        for mid in email_ids:
             _, data = imap.fetch(mid, "(RFC822)")
             msg = email.message_from_bytes(data[0][1])
             sender = sender_email(msg.get("From", ""))
+            subject = decode_str(msg.get("Subject", ""))
+
+            log.info("Email reçu — from=%s | sujet=%s", sender, subject)
 
             if sender not in ALLOWED_SENDERS:
+                log.warning("Sender ignoré (non autorisé) : %s | autorisés : %s", sender, ALLOWED_SENDERS)
                 imap.store(mid, "+FLAGS", "\\Seen")
                 continue
 
-            subject = decode_str(msg.get("Subject", ""))
             body = extract_text(msg)
             raw = f"De : {msg.get('From', '')}\nObjet : {subject}\nDate : {msg.get('Date', '')}\n\n{body}"
 
@@ -83,7 +90,7 @@ def poll():
                     headers={"x-pipeline-secret": PIPELINE_SECRET},
                     timeout=30,
                 )
-                log.info("Email traité — %s | status=%d", subject, resp.status_code)
+                log.info("Pipeline OK — sujet=%s | HTTP=%d | réponse=%s", subject, resp.status_code, resp.text[:200])
             except Exception as exc:
                 log.error("Erreur POST pipeline : %s", exc)
 
