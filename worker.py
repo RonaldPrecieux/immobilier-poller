@@ -10,6 +10,7 @@ import os
 import time
 import logging
 import threading
+from datetime import datetime, timedelta
 import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from email.header import decode_header
@@ -57,24 +58,30 @@ def sender_email(from_header: str) -> str:
     return from_header.strip().lower()
 
 
+processed_ids: set = set()
+
 def poll():
     log.info("--- Cycle polling ---")
     with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
         imap.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
         imap.select("INBOX")
-        _, ids = imap.search(None, "UNSEEN")
+        since = (datetime.now() - timedelta(hours=24)).strftime("%d-%b-%Y")
+        _, ids = imap.search(None, f'SINCE "{since}"')
 
         email_ids = ids[0].split()
+        sent = 0
         ignored = 0
 
         for mid in email_ids:
+            if mid in processed_ids:
+                continue
+
             _, data = imap.fetch(mid, "(RFC822)")
             msg = email.message_from_bytes(data[0][1])
             sender = sender_email(msg.get("From", ""))
 
             if sender not in ALLOWED_SENDERS:
                 ignored += 1
-                imap.store(mid, "+FLAGS", "\\Seen")
                 continue
 
             subject = decode_str(msg.get("Subject", ""))
@@ -91,12 +98,12 @@ def poll():
                     timeout=30,
                 )
                 log.info(">>> Pipeline OK — HTTP=%d | %s", resp.status_code, resp.text[:200])
+                processed_ids.add(mid)
+                sent += 1
             except Exception as exc:
                 log.error(">>> Erreur POST pipeline : %s", exc)
 
-            imap.store(mid, "+FLAGS", "\\Seen")
-
-        log.info("Cycle terminé — %d traité(s), %d ignoré(s)", len(email_ids) - ignored, ignored)
+        log.info("Cycle terminé — %d envoyé(s), %d ignoré(s) (non autorisés)", sent, ignored)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
