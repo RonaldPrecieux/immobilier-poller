@@ -64,7 +64,7 @@ def poll():
     log.info("--- Cycle polling ---")
     with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
         imap.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-        imap.select("INBOX")
+        imap.select('"[Gmail]/All Mail"')
         since = (datetime.now() - timedelta(hours=24)).strftime("%d-%b-%Y")
         _, ids = imap.search(None, f'SINCE "{since}"')
 
