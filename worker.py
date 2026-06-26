@@ -60,11 +60,36 @@ def sender_email(from_header: str) -> str:
 
 processed_ids: set = set()
 
+# Mots-clés pour identifier le dossier "Tous les messages" dans n'importe quelle langue Gmail
+_ALL_MAIL_KEYWORDS = ("All Mail", "Tous les messages", "Alle Nachrichten", "Tutti i messaggi", "Todos los mensajes")
+
+def _find_all_mail_folder(imap) -> str:
+    _, listing = imap.list()
+    for entry in listing:
+        decoded = entry.decode() if isinstance(entry, bytes) else entry
+        if any(kw in decoded for kw in _ALL_MAIL_KEYWORDS):
+            # Format : (\Flags) "/" "Nom du dossier"  ou  (\Flags) "/" Nom
+            import re
+            m = re.search(r'"([^"]+)"$', decoded)
+            if m:
+                return m.group(1)
+            parts = decoded.rsplit(" ", 1)
+            if len(parts) == 2:
+                return parts[-1].strip('"')
+    log.warning("Dossier All Mail introuvable — fallback sur INBOX")
+    return "INBOX"
+
 def poll():
     log.info("--- Cycle polling ---")
     with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
         imap.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-        imap.select('"[Gmail]/All Mail"')
+        folder = _find_all_mail_folder(imap)
+        mailbox = f'"{folder}"' if ' ' in folder else folder
+        typ, _ = imap.select(mailbox)
+        if typ != 'OK':
+            log.error("Impossible de sélectionner le dossier '%s' (typ=%s)", folder, typ)
+            return
+        log.info("Dossier sélectionné : %s", folder)
         since = (datetime.now() - timedelta(hours=24)).strftime("%d-%b-%Y")
         _, ids = imap.search(None, f'SINCE "{since}"')
 
