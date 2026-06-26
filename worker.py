@@ -1,13 +1,17 @@
 """
 Poller IMAP → POST /api/process-email
-Hébergé sur Render comme Background Worker.
+Hébergé sur Render comme Web Service (tier gratuit).
+Le thread principal expose un serveur HTTP minimal sur PORT
+pour satisfaire Render, le polling tourne en thread de fond.
 """
 import imaplib
 import email
 import os
 import time
 import logging
+import threading
 import requests
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from email.header import decode_header
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -86,6 +90,16 @@ def poll():
             imap.store(mid, "+FLAGS", "\\Seen")
 
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, *args):
+        pass  # silence les logs HTTP
+
+
 def run():
     log.info("Poller démarré — polling toutes les %ds", POLL_INTERVAL)
     while True:
@@ -97,4 +111,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    port = int(os.getenv("PORT", "10000"))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    log.info("Serveur HTTP démarré sur le port %d", port)
+
+    poller_thread = threading.Thread(target=run, daemon=True)
+    poller_thread.start()
+
+    server.serve_forever()
