@@ -65,20 +65,20 @@ def poll():
         _, ids = imap.search(None, "UNSEEN")
 
         email_ids = ids[0].split()
-        log.info("%d email(s) non lu(s) trouvé(s)", len(email_ids))
+        ignored = 0
 
         for mid in email_ids:
             _, data = imap.fetch(mid, "(RFC822)")
             msg = email.message_from_bytes(data[0][1])
             sender = sender_email(msg.get("From", ""))
-            subject = decode_str(msg.get("Subject", ""))
-
-            log.info("Email reçu — from=%s | sujet=%s", sender, subject)
 
             if sender not in ALLOWED_SENDERS:
-                log.warning("Sender ignoré (non autorisé) : %s | autorisés : %s", sender, ALLOWED_SENDERS)
+                ignored += 1
                 imap.store(mid, "+FLAGS", "\\Seen")
                 continue
+
+            subject = decode_str(msg.get("Subject", ""))
+            log.info(">>> Lead détecté — from=%s | sujet=%s", sender, subject)
 
             body = extract_text(msg)
             raw = f"De : {msg.get('From', '')}\nObjet : {subject}\nDate : {msg.get('Date', '')}\n\n{body}"
@@ -90,11 +90,13 @@ def poll():
                     headers={"x-pipeline-secret": PIPELINE_SECRET},
                     timeout=30,
                 )
-                log.info("Pipeline OK — sujet=%s | HTTP=%d | réponse=%s", subject, resp.status_code, resp.text[:200])
+                log.info(">>> Pipeline OK — HTTP=%d | %s", resp.status_code, resp.text[:200])
             except Exception as exc:
-                log.error("Erreur POST pipeline : %s", exc)
+                log.error(">>> Erreur POST pipeline : %s", exc)
 
             imap.store(mid, "+FLAGS", "\\Seen")
+
+        log.info("Cycle terminé — %d traité(s), %d ignoré(s)", len(email_ids) - ignored, ignored)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
