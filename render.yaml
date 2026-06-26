@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: immobilier-poller
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+    envVars:
+      - key: GMAIL_ADDRESS
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: PIPELINE_URL
+        sync: false
+      - key: PROCESS_EMAIL_SECRET
+        sync: false
+      - key: ALLOWED_SENDERS
+        value: noreply@immoweb.be,notifications@immovlan.be,no-reply@immovlan.be
+      - key: POLL_INTERVAL_SECONDS
+        value: "60"
